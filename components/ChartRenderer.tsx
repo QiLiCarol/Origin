@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
@@ -16,8 +16,25 @@ interface ChartRendererProps {
 const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, lang }) => {
   const t = translations[lang];
   const vt = virtualTables.find(v => v.id === widget.dataSourceId);
-  const data = vt?.data || [];
+  const rawData = vt?.data || [];
   const { xAxis, yAxis, color, content } = widget.config;
+
+  // Aggregate data for charts to handle non-unique X-axis values
+  const aggregatedData = useMemo(() => {
+    if (!xAxis || !yAxis || rawData.length === 0) return [];
+    
+    const groups: Record<string, number> = {};
+    rawData.forEach(item => {
+      const key = String(item[xAxis] ?? 'N/A');
+      const val = Number(item[yAxis]) || 0;
+      groups[key] = (groups[key] || 0) + val;
+    });
+
+    return Object.entries(groups).map(([name, value]) => ({
+      [xAxis]: name,
+      [yAxis]: value
+    }));
+  }, [rawData, xAxis, yAxis]);
 
   if (widget.type === ChartType.AI_CARD) {
     return (
@@ -29,7 +46,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     );
   }
 
-  if (data.length === 0 && widget.type !== ChartType.KPI) {
+  if (rawData.length === 0 && widget.type !== ChartType.KPI) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-300">
         <p className="text-xs font-medium italic">{t.noDataSource}</p>
@@ -41,7 +58,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     case ChartType.BAR:
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data}>
+          <BarChart data={aggregatedData}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis dataKey={xAxis} tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
             <YAxis tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
@@ -56,7 +73,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     case ChartType.LINE:
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <LineChart data={aggregatedData}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis dataKey={xAxis} tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
             <YAxis tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
@@ -67,7 +84,8 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
       );
 
     case ChartType.PIE:
-      const pieData = data.slice(0, 5); // Just first 5 for better pie visual
+      // Slicing top categories for better visualization
+      const pieData = aggregatedData.sort((a, b) => (b[yAxis!] as number) - (a[yAxis!] as number)).slice(0, 8);
       return (
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -80,7 +98,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
               nameKey={xAxis}
             >
               {pieData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4'][index % 5]} />
+                <Cell key={`cell-${index}`} fill={['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899', '#f97316'][index % 8]} />
               ))}
             </Pie>
             <Tooltip />
@@ -90,7 +108,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
       );
 
     case ChartType.KPI:
-      const totalVal = data.reduce((sum, item) => sum + (Number(item[yAxis || '']) || 0), 0);
+      const totalVal = rawData.reduce((sum, item) => sum + (Number(item[yAxis || '']) || 0), 0);
       return (
         <div className="h-full flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-extrabold text-slate-900 mb-1">
@@ -114,10 +132,10 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {data.slice(0, 10).map((row, i) => (
+              {rawData.slice(0, 50).map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-2 px-3">{row[xAxis || '']}</td>
-                  <td className="py-2 px-3 font-mono">{row[yAxis || '']}</td>
+                  <td className="py-2 px-3">{row[xAxis || '']?.toString()}</td>
+                  <td className="py-2 px-3 font-mono">{row[yAxis || '']?.toString()}</td>
                 </tr>
               ))}
             </tbody>

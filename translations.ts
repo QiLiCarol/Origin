@@ -49,7 +49,7 @@ export const translations = {
     abort: "Abort",
     connectInstance: "Connect Instance",
     synchronizing: "Synchronizing...",
-    addElement: "Add Element",
+    addElement: "Add Widget",
     barChart: "Bar Chart",
     lineChart: "Line Chart",
     pieChart: "Pie Chart",
