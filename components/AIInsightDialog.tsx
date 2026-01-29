@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Sparkles, X, Copy, Save, Loader2, AlertCircle } from 'lucide-react';
 import { DashboardWidget, VirtualTable, Language } from '../types';
@@ -27,7 +26,7 @@ const AIInsightDialog: React.FC<AIInsightDialogProps> = ({ widget, dataSource, o
         return;
       }
       try {
-        const text = await getAIInsights(dataSource.data, widget.title);
+        const text = await getAIInsights(dataSource.data, widget.title, lang);
         setInsight(text || (lang === Language.EN ? "AI returned an empty analysis." : "AI 返回了空的分析报告。"));
       } catch (err) {
         setError(lang === Language.EN ? "An error occurred during AI analysis." : "AI 分析过程中发生错误。");

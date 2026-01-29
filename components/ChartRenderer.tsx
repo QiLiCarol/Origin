@@ -4,6 +4,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
+import { marked } from 'marked';
 import { ChartType, DashboardWidget, VirtualTable, Language } from '../types';
 import { translations } from '../translations';
 
@@ -36,12 +37,32 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     }));
   }, [rawData, xAxis, yAxis]);
 
+  // Markdown parsing for AI cards
+  const renderedMarkdown = useMemo(() => {
+    if (widget.type !== ChartType.AI_CARD || !content) return '';
+    try {
+      // Remove potential markdown code block wrappers if the AI returned the whole thing inside one
+      const cleanContent = content.replace(/^```markdown\n?/, '').replace(/\n?```$/, '');
+      return marked.parse(cleanContent);
+    } catch (e) {
+      console.error('Markdown parsing error:', e);
+      return content;
+    }
+  }, [widget.type, content]);
+
   if (widget.type === ChartType.AI_CARD) {
     return (
-      <div className="prose prose-sm max-w-none h-full overflow-y-auto scrollbar-thin">
-        <div className="text-slate-600 whitespace-pre-wrap leading-relaxed text-xs">
-          {content || t.analyzingData}
-        </div>
+      <div className="h-full overflow-y-auto scrollbar-thin px-4 py-2">
+        {content ? (
+          <div 
+            className="prose prose-sm prose-slate max-w-none text-slate-600"
+            dangerouslySetInnerHTML={{ __html: renderedMarkdown as string }}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-slate-400 italic text-xs">
+            {t.analyzingData}
+          </div>
+        )}
       </div>
     );
   }
