@@ -81,7 +81,8 @@ export const translations = {
     unknownChartType: "Unknown Chart Type",
     analyzingData: "Analyzing data...",
     atLeastOneCanvas: "At least one canvas must exist.",
-    userName: "Senior BI Admin"
+    userName: "Senior BI Admin",
+    assetId: "Asset ID"
   },
   zh: {
     nav: "导航",
@@ -165,6 +166,7 @@ export const translations = {
     unknownChartType: "未知图表类型",
     analyzingData: "正在分析数据...",
     atLeastOneCanvas: "必须保留至少一个看板。",
-    userName: "管理员"
+    userName: "管理员",
+    assetId: "资产 ID"
   }
 };

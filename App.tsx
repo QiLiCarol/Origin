@@ -63,19 +63,31 @@ const App: React.FC = () => {
     }
   };
 
-  // CSV Upload Handler
+  // CSV Upload Handler with Encoding Detection
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (!text) return;
+      const buffer = e.target?.result as ArrayBuffer;
+      if (!buffer) return;
+
+      let text = '';
+      try {
+        // First try to decode as UTF-8. {fatal: true} will cause it to throw if invalid sequences are found
+        const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+        text = utf8Decoder.decode(buffer);
+      } catch (err) {
+        // If UTF-8 fails, it's likely a legacy encoding like GBK (common in Chinese Excel CSV exports)
+        console.warn("UTF-8 decoding failed, falling back to GBK for Chinese character support.");
+        const gbkDecoder = new TextDecoder('gbk');
+        text = gbkDecoder.decode(buffer);
+      }
 
       const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
       if (lines.length < 2) {
-        alert("Invalid CSV: File must contain headers and at least one row of data.");
+        alert(lang === Language.EN ? "Invalid CSV: File must contain headers and at least one row of data." : "无效的 CSV：文件必须包含表头和至少一行数据。");
         return;
       }
 
@@ -103,6 +115,7 @@ const App: React.FC = () => {
         const obj: any = {};
         headers.forEach((header, index) => {
           const val = values[index];
+          // Try to convert to number if possible, otherwise keep as string
           obj[header] = isNaN(Number(val)) || val === '' ? val : Number(val);
         });
         return obj;
@@ -120,7 +133,9 @@ const App: React.FC = () => {
       setVirtualTables(prev => [...prev, newVt]);
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
-    reader.readAsText(file);
+    
+    // Read as ArrayBuffer to allow multiple decoding attempts
+    reader.readAsArrayBuffer(file);
   };
 
   // Dashboard Actions

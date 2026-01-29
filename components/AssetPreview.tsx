@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Table as TableIcon, Download, Calendar, ArrowLeft, Database } from 'lucide-react';
 import { VirtualTable, Language } from '../types';
@@ -13,6 +12,13 @@ interface AssetPreviewProps {
 
 const AssetPreview: React.FC<AssetPreviewProps> = ({ table, onBack, onExport, lang }) => {
   const t = translations[lang];
+  
+  // Format date based on current language
+  const formattedDate = new Date(table.createdAt).toLocaleDateString(
+    lang === Language.ZH ? 'zh-CN' : 'en-US',
+    { year: 'numeric', month: 'long', day: 'numeric' }
+  );
+
   return (
     <div className="h-full flex flex-col bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -25,7 +31,7 @@ const AssetPreview: React.FC<AssetPreviewProps> = ({ table, onBack, onExport, la
               <div className="flex items-center gap-3 mt-1 text-slate-500 text-xs font-medium">
                 <span className="flex items-center gap-1.5"><Database className="w-3.5 h-3.5" /> {table.fields.length} {t.columns}</span>
                 <span className="w-1 h-1 rounded-full bg-slate-300" />
-                <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {t.created} {new Date(table.createdAt).toLocaleDateString()}</span>
+                <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {t.created} {formattedDate}</span>
               </div>
             </div>
           </div>
@@ -57,7 +63,12 @@ const AssetPreview: React.FC<AssetPreviewProps> = ({ table, onBack, onExport, la
           </tbody>
         </table>
       </div>
-      <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.totalRecords}: {table.data.length}</span><div className="flex items-center gap-1.5"><span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">Asset ID: {table.id}</span></div></div>
+      <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.totalRecords}: {table.data.length}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">{t.assetId}: {table.id}</span>
+        </div>
+      </div>
     </div>
   );
 };
