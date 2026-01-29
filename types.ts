@@ -1,7 +1,13 @@
 
 export enum Module {
   DATA_WORKBENCH = 'DATA_WORKBENCH',
-  CHART_WORKBENCH = 'CHART_WORKBENCH'
+  CHART_WORKBENCH = 'CHART_WORKBENCH',
+  ASSET_PREVIEW = 'ASSET_PREVIEW'
+}
+
+export enum Language {
+  EN = 'en',
+  ZH = 'zh'
 }
 
 export type TableField = {
@@ -16,11 +22,19 @@ export type DatabaseTable = {
   data: any[];
 };
 
+export type DatabaseConnection = {
+  id: string;
+  name: string;
+  type: 'PostgreSQL' | 'MySQL' | 'Oracle';
+  status: 'connected' | 'error';
+  tables: DatabaseTable[];
+};
+
 export type VirtualTable = {
   id: string;
   name: string;
   sourceTableIds: string[];
-  fields: string[]; // Field names
+  fields: string[]; // Field names (namespaced)
   data: any[];
   createdAt: string;
 };

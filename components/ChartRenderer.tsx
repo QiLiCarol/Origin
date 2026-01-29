@@ -4,14 +4,17 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
-import { ChartType, DashboardWidget, VirtualTable } from '../types';
+import { ChartType, DashboardWidget, VirtualTable, Language } from '../types';
+import { translations } from '../translations';
 
 interface ChartRendererProps {
   widget: DashboardWidget;
   virtualTables: VirtualTable[];
+  lang: Language;
 }
 
-const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables }) => {
+const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, lang }) => {
+  const t = translations[lang];
   const vt = virtualTables.find(v => v.id === widget.dataSourceId);
   const data = vt?.data || [];
   const { xAxis, yAxis, color, content } = widget.config;
@@ -20,7 +23,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables }) 
     return (
       <div className="prose prose-sm max-w-none h-full overflow-y-auto scrollbar-thin">
         <div className="text-slate-600 whitespace-pre-wrap leading-relaxed text-xs">
-          {content || 'Analyzing data...'}
+          {content || t.analyzingData}
         </div>
       </div>
     );
@@ -29,7 +32,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables }) 
   if (data.length === 0 && widget.type !== ChartType.KPI) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-300">
-        <p className="text-xs font-medium italic">No data source connected</p>
+        <p className="text-xs font-medium italic">{t.noDataSource}</p>
       </div>
     );
   }
@@ -87,16 +90,15 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables }) 
       );
 
     case ChartType.KPI:
-      const total = data.reduce((sum, item) => sum + (Number(item[yAxis || '']) || 0), 0);
-      const avg = total / (data.length || 1);
+      const totalVal = data.reduce((sum, item) => sum + (Number(item[yAxis || '']) || 0), 0);
       return (
         <div className="h-full flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-extrabold text-slate-900 mb-1">
-            {total > 1000 ? `${(total / 1000).toFixed(1)}k` : total.toFixed(0)}
+            {totalVal > 1000 ? `${(totalVal / 1000).toFixed(1)}k` : totalVal.toFixed(0)}
           </div>
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{yAxis || 'TOTAL'}</div>
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">{yAxis || t.total}</div>
           <div className="mt-4 flex items-center gap-2 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-            <span>+12.5% from last month</span>
+            <span>+12.5% {t.fromLastMonth}</span>
           </div>
         </div>
       );
@@ -104,18 +106,18 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables }) 
     case ChartType.TABLE:
       return (
         <div className="h-full overflow-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-xs text-slate-600">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-slate-100">
-                <th className="py-2 px-3 font-bold text-slate-500">{xAxis}</th>
-                <th className="py-2 px-3 font-bold text-slate-500">{yAxis}</th>
+                <th className="py-2 px-3 font-bold text-slate-500 uppercase tracking-tighter text-[10px]">{xAxis}</th>
+                <th className="py-2 px-3 font-bold text-slate-500 uppercase tracking-tighter text-[10px]">{yAxis}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {data.slice(0, 10).map((row, i) => (
-                <tr key={i}>
-                  <td className="py-2 px-3 text-slate-600">{row[xAxis || '']}</td>
-                  <td className="py-2 px-3 text-slate-600 font-mono">{row[yAxis || '']}</td>
+                <tr key={i} className="hover:bg-slate-50 transition-colors">
+                  <td className="py-2 px-3">{row[xAxis || '']}</td>
+                  <td className="py-2 px-3 font-mono">{row[yAxis || '']}</td>
                 </tr>
               ))}
             </tbody>
@@ -124,7 +126,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables }) 
       );
 
     default:
-      return <div>Unknown Chart Type</div>;
+      return <div className="p-4 text-xs italic text-slate-400">{t.unknownChartType}</div>;
   }
 };
 
