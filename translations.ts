@@ -109,7 +109,7 @@ export const translations = {
     placeholderFeedback: "分享您的想法或报告错误...",
     sendFeedback: "发送反馈",
     connectDb: "连接数据库",
-    activeInfrastructure: "活跃基础设施",
+    activeInfrastructure: "已连接数据库",
     fields: "字段",
     available: "可用",
     realTimeSynthesis: "实时合成",
