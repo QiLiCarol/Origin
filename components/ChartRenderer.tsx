@@ -20,20 +20,27 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
   const rawData = vt?.data || [];
   const { xAxis, yAxis, color, content } = widget.config;
 
-  // Aggregate data for charts to handle non-unique X-axis values
-  const aggregatedData = useMemo(() => {
+  /**
+   * Defensive aggregation logic.
+   * We map raw dynamic field names to standardized internal keys 'name' and 'value'.
+   * This prevents crashes caused by empty string keys or inconsistent field mappings during transitions.
+   */
+  const standardizedData = useMemo(() => {
     if (!xAxis || !yAxis || rawData.length === 0) return [];
     
     const groups: Record<string, number> = {};
     rawData.forEach(item => {
       const key = String(item[xAxis] ?? 'N/A');
-      const val = Number(item[yAxis]) || 0;
-      groups[key] = (groups[key] || 0) + val;
+      const val = Number(item[yAxis]);
+      // Only aggregate finite numbers to avoid NaN issues in Recharts (especially Pie)
+      if (Number.isFinite(val)) {
+        groups[key] = (groups[key] || 0) + val;
+      }
     });
 
     return Object.entries(groups).map(([name, value]) => ({
-      [xAxis]: name,
-      [yAxis]: value
+      name,
+      value
     }));
   }, [rawData, xAxis, yAxis]);
 
@@ -41,7 +48,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
   const renderedMarkdown = useMemo(() => {
     if (widget.type !== ChartType.AI_CARD || !content) return '';
     try {
-      // Remove potential markdown code block wrappers if the AI returned the whole thing inside one
       const cleanContent = content.replace(/^```markdown\n?/, '').replace(/\n?```$/, '');
       return marked.parse(cleanContent);
     } catch (e) {
@@ -67,7 +73,8 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     );
   }
 
-  if (rawData.length === 0 && widget.type !== ChartType.KPI) {
+  // Common check for missing configuration or data
+  if ((!xAxis || !yAxis || standardizedData.length === 0) && widget.type !== ChartType.KPI) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-300">
         <p className="text-xs font-medium italic">{t.noDataSource}</p>
@@ -75,18 +82,23 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     );
   }
 
+  /**
+   * CRITICAL: We use key={widget.type} on the charts to force a complete unmount/remount
+   * when the user switches between types (e.g., BAR to PIE). 
+   * This solves the Recharts "inconsistent drawing logic" crash.
+   */
   switch (widget.type) {
     case ChartType.BAR:
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={aggregatedData}>
+          <BarChart data={standardizedData} key="bar-chart">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-            <XAxis dataKey={xAxis} tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+            <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
             <YAxis tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
             <Tooltip 
               contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
             />
-            <Bar dataKey={yAxis} fill={color} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       );
@@ -94,29 +106,32 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
     case ChartType.LINE:
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={aggregatedData}>
+          <LineChart data={standardizedData} key="line-chart">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-            <XAxis dataKey={xAxis} tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
+            <XAxis dataKey="name" tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
             <YAxis tick={{fontSize: 10, fill: '#94a3b8'}} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Line type="monotone" dataKey={yAxis} stroke={color} strokeWidth={2} dot={{ r: 4, fill: color }} activeDot={{ r: 6 }} />
+            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 4, fill: color }} activeDot={{ r: 6 }} />
           </LineChart>
         </ResponsiveContainer>
       );
 
     case ChartType.PIE:
-      // Slicing top categories for better visualization
-      const pieData = aggregatedData.sort((a, b) => (b[yAxis!] as number) - (a[yAxis!] as number)).slice(0, 8);
+      // Sort and slice top categories safely
+      const pieData = [...standardizedData]
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 8);
+        
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart key="pie-chart">
             <Pie
               data={pieData}
               innerRadius={60}
               outerRadius={80}
               paddingAngle={5}
-              dataKey={yAxis}
-              nameKey={xAxis}
+              dataKey="value"
+              nameKey="name"
             >
               {pieData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899', '#f97316'][index % 8]} />
@@ -129,7 +144,10 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ widget, virtualTables, la
       );
 
     case ChartType.KPI:
-      const totalVal = rawData.reduce((sum, item) => sum + (Number(item[yAxis || '']) || 0), 0);
+      const totalVal = rawData.reduce((sum, item) => {
+        const val = Number(item[yAxis || '']);
+        return sum + (Number.isFinite(val) ? val : 0);
+      }, 0);
       return (
         <div className="h-full flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-extrabold text-slate-900 mb-1">
