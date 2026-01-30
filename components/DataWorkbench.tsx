@@ -1,9 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Table, Check, Search, Database, Download, Save, FileText, 
-  Filter, X, ChevronRight, ChevronDown, Plus, Globe, Shield, Activity, Link2, AlertCircle, Loader2,
-  Server, HardDrive, Cpu, Zap, Lock, RefreshCw, Key
+  Table, Database, Download, Save, 
+  Filter, X, Plus, Activity, 
+  Server, RefreshCw, Zap, Lock, Calendar, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { DatabaseTable, VirtualTable, DatabaseConnection, Language } from '../types';
 import { translations } from '../translations';
@@ -16,6 +16,8 @@ interface DataWorkbenchProps {
 }
 
 type SelectionMap = Record<string, string[]>;
+type DateFilterRange = { start?: string; end?: string };
+type DateFiltersMap = Record<string, DateFilterRange>; 
 
 const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, existingVirtualTables, lang }) => {
   const t = translations[lang];
@@ -33,22 +35,53 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
 
   const [viewingTable, setViewingTable] = useState<DatabaseTable | null>(MOCK_TABLES[0]);
   const [selection, setSelection] = useState<SelectionMap>({});
+  const [dateFilters, setDateFilters] = useState<DateFiltersMap>({});
   const [vtName, setVtName] = useState(lang === Language.EN ? 'Aggregated_Analytics_Report' : '聚合分析报告');
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [selectedDbType, setSelectedDbType] = useState<'PostgreSQL' | 'MySQL' | 'Oracle'>('PostgreSQL');
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  // Reset page on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selection, dateFilters]);
+
   const toggleField = (tableId: string, fieldName: string) => {
     setSelection(prev => {
       const currentFields = prev[tableId] || [];
-      const newFields = currentFields.includes(fieldName)
+      const isRemoving = currentFields.includes(fieldName);
+      const newFields = isRemoving
         ? currentFields.filter(f => f !== fieldName)
         : [...currentFields, fieldName];
       
       const newSelection = { ...prev, [tableId]: newFields };
-      if (newFields.length === 0) delete newSelection[tableId];
+      if (newFields.length === 0) {
+        delete newSelection[tableId];
+      }
       return newSelection;
     });
+
+    // Clean up filters if removing a field that was potentially a temporal filter
+    if (selection[tableId]?.length === 1 && selection[tableId].includes(fieldName)) {
+      setDateFilters(prev => {
+        const newFilters = { ...prev };
+        Object.keys(newFilters).forEach(key => {
+          if (key.startsWith(`${tableId}_`)) delete newFilters[key];
+        });
+        return newFilters;
+      });
+    }
+  };
+
+  const updateDateFilter = (tableId: string, fieldName: string, range: DateFilterRange) => {
+    setDateFilters(prev => ({
+      ...prev,
+      [`${tableId}_${fieldName}`]: range
+    }));
   };
 
   const handleConnectNew = () => {
@@ -73,25 +106,73 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
   const mergedData = useMemo<any[]>(() => {
     if (selectedTableIds.length === 0) return [];
     const allTables: DatabaseTable[] = connections.flatMap(c => c.tables);
-    const tables: DatabaseTable[] = selectedTableIds.map(id => allTables.find(t => t.id === id) as DatabaseTable);
-    const maxRows = Math.max(...tables.map(t => t.data.length));
-    const result: any[] = [];
+    const selectedTables = selectedTableIds
+      .map(tId => allTables.find(t => t.id === tId))
+      .filter((t): t is DatabaseTable => !!t);
 
-    for (let i = 0; i < maxRows; i++) {
-      const row: any = { _index: i + 1 };
-      selectedTableIds.forEach(tId => {
-        const table = allTables.find(t => t.id === tId) as DatabaseTable;
-        if (!table) return;
-        const sourceRow = (table.data[i] as any) || {};
-        const selectedFields = selection[tId];
-        selectedFields.forEach(f => {
-          row[`${table.name}_${f}`] = sourceRow[f] ?? null;
+    if (selectedTables.length === 0) return [];
+
+    const filteredRowsPerTable: Record<string, any[]> = {};
+    selectedTables.forEach(table => {
+      filteredRowsPerTable[table.id] = table.data.filter(row => {
+        return (Object.entries(dateFilters) as [string, DateFilterRange][]).every(([filterKey, range]) => {
+          if (!filterKey.startsWith(`${table.id}_`)) return true;
+          const fieldName = filterKey.replace(`${table.id}_`, '');
+          const rowVal = row[fieldName];
+          if (!rowVal) return true;
+
+          const rowDate = new Date(rowVal).getTime();
+          if (range.start && rowDate < new Date(range.start).getTime()) return false;
+          if (range.end && rowDate > new Date(range.end).getTime()) return false;
+          return true;
         });
       });
-      result.push(row);
+    });
+
+    let joinKey: string | null = null;
+    if (selectedTables.length > 1) {
+      const fieldNames0 = selectedTables[0].fields.map(f => f.name);
+      const fieldNames1 = selectedTables[1].fields.map(f => f.name);
+      joinKey = fieldNames0.find(name => fieldNames1.includes(name) && (name === 'campaign_id' || name === 'date')) || null;
+    }
+
+    const result: any[] = [];
+    if (joinKey && selectedTables.length === 2) {
+      const t1 = selectedTables[0];
+      const t2 = selectedTables[1];
+      const rows1 = filteredRowsPerTable[t1.id];
+      const rows2 = filteredRowsPerTable[t2.id];
+
+      rows1.forEach((r1) => {
+        const matches = rows2.filter(r2 => r2[joinKey!] === r1[joinKey!]);
+        matches.forEach(r2 => {
+          const row: any = { _index: result.length + 1 };
+          (selection[t1.id] as string[]).forEach(f => row[`${t1.name}_${f}`] = r1[f]);
+          (selection[t2.id] as string[]).forEach(f => row[`${t2.name}_${f}`] = r2[f]);
+          result.push(row);
+        });
+      });
+    } else {
+      const maxRows = Math.max(...Object.values(filteredRowsPerTable).map(rows => rows.length), 0);
+      for (let i = 0; i < maxRows; i++) {
+        const row: any = { _index: i + 1 };
+        selectedTables.forEach(table => {
+          const sourceRow = filteredRowsPerTable[table.id][i] || {};
+          (selection[table.id] as string[]).forEach(f => {
+            row[`${table.name}_${f}`] = sourceRow[f] ?? null;
+          });
+        });
+        result.push(row);
+      }
     }
     return result;
-  }, [selection, selectedTableIds, connections]);
+  }, [selection, connections, dateFilters]);
+
+  const totalPages = Math.ceil(mergedData.length / pageSize);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return mergedData.slice(start, start + pageSize);
+  }, [mergedData, currentPage, pageSize]);
 
   const allSelectedFieldKeys = useMemo<string[]>(() => {
     const keys: string[] = [];
@@ -99,11 +180,12 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
     selectedTableIds.forEach(tId => {
       const table = allTables.find(t => t.id === tId) as DatabaseTable;
       if (table) {
-        selection[tId].forEach(f => keys.push(`${table.name}_${f}`));
+        const tableSelection = selection[tId] as string[];
+        tableSelection.forEach(f => keys.push(`${table.name}_${f}`));
       }
     });
     return keys;
-  }, [selection, selectedTableIds, connections]);
+  }, [selection, connections]);
 
   const handleExportCSV = () => {
     if (mergedData.length === 0) return;
@@ -133,24 +215,41 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
     };
     onSaveVirtualTable(newVt);
     setSelection({});
+    setDateFilters({});
     setVtName(lang === Language.EN ? 'Aggregated_Analytics_Report' : '聚合分析报告');
   };
+
+  const activeDateFields = useMemo(() => {
+    const list: { tableId: string; tableName: string; fieldName: string }[] = [];
+    const allTables = connections.flatMap(c => c.tables);
+    (Object.entries(selection) as [string, string[]][]).forEach(([tId, fields]) => {
+      const table = allTables.find(t => t.id === tId);
+      if (!table) return;
+      fields.forEach(fName => {
+        const field = table.fields.find(f => f.name === fName);
+        if (field?.type === 'date') {
+          list.push({ tableId: tId, tableName: table.name, fieldName: fName });
+        }
+      });
+    });
+    return list;
+  }, [selection, connections]);
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-12 gap-8 h-[calc(100vh-180px)]">
-        {/* Sidebar: Source Browser */}
-        <div className="col-span-3 space-y-4 flex flex-col">
+        {/* Sidebar */}
+        <div className="col-span-3 space-y-4 flex flex-col overflow-hidden">
           <button 
             onClick={() => setIsConnectModalOpen(true)}
-            className="w-full flex items-center justify-center gap-3 px-4 py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all hover:scale-[1.02] active:scale-[0.98] group"
+            className="w-full flex items-center justify-center gap-3 px-4 py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all hover:scale-[1.02] active:scale-[0.98] group shrink-0"
           >
             <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
             {t.connectDb}
           </button>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex-1 overflow-hidden flex flex-col">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">{t.activeInfrastructure}</h3>
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex-1 overflow-hidden flex flex-col min-h-0">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 px-2 shrink-0">{t.activeInfrastructure}</h3>
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 scrollbar-thin">
               {connections.map(conn => (
                 <div key={conn.id} className="space-y-1">
@@ -180,8 +279,51 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
             </div>
           </div>
 
+          {activeDateFields.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm shrink-0">
+               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 px-2 flex items-center gap-2">
+                 <Calendar className="w-3.5 h-3.5" />
+                 {t.temporalFilters}
+               </h3>
+               <div className="space-y-4 max-h-48 overflow-y-auto scrollbar-thin pr-2">
+                 {activeDateFields.map(({ tableId, tableName, fieldName }) => {
+                   const filterKey = `${tableId}_${fieldName}`;
+                   const range = dateFilters[filterKey] || {};
+                   return (
+                     <div key={filterKey} className="p-3 bg-slate-50 rounded-lg border border-slate-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase truncate max-w-[150px]">{tableName}: {fieldName}</span>
+                          {(range.start || range.end) && <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1 rounded uppercase font-bold">{t.filterActive}</span>}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                           <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">{t.startDate}</label>
+                              <input 
+                                type="date" 
+                                value={range.start || ''} 
+                                onChange={(e) => updateDateFilter(tableId, fieldName, { ...range, start: e.target.value })}
+                                className="w-full p-1 text-[10px] border border-slate-200 rounded outline-none bg-white focus:border-indigo-500"
+                              />
+                           </div>
+                           <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase">{t.endDate}</label>
+                              <input 
+                                type="date" 
+                                value={range.end || ''} 
+                                onChange={(e) => updateDateFilter(tableId, fieldName, { ...range, end: e.target.value })}
+                                className="w-full p-1 text-[10px] border border-slate-200 rounded outline-none bg-white focus:border-indigo-500"
+                              />
+                           </div>
+                        </div>
+                     </div>
+                   );
+                 })}
+               </div>
+            </div>
+          )}
+
           {viewingTable && (
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm h-1/2 overflow-hidden flex flex-col">
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm h-1/2 overflow-hidden flex flex-col min-h-0 shrink-0">
               <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center justify-between">
                 <span>{t.fields}: {viewingTable.name}</span>
                 <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">{viewingTable.fields.length} {t.available}</span>
@@ -193,7 +335,10 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
                     <label key={field.name} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}`}>
                       <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600" checked={isChecked || false} onChange={() => toggleField(viewingTable.id, field.name)} />
                       <div className="flex-1 overflow-hidden">
-                        <div className={`text-xs font-bold truncate ${isChecked ? 'text-indigo-700' : 'text-slate-700'}`}>{field.name}</div>
+                        <div className={`text-xs font-bold truncate flex items-center gap-1 ${isChecked ? 'text-indigo-700' : 'text-slate-700'}`}>
+                          {field.name}
+                          {field.type === 'date' && <Calendar className="w-3 h-3 text-slate-300" />}
+                        </div>
                         <div className="text-[9px] text-slate-400 uppercase font-bold">{field.type}</div>
                       </div>
                     </label>
@@ -205,9 +350,9 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
         </div>
 
         {/* Main Content Area */}
-        <div className="col-span-9 space-y-4 h-full flex flex-col">
+        <div className="col-span-9 space-y-4 h-full flex flex-col overflow-hidden">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white z-10">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
               <div className="flex items-center gap-6">
                 <div>
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -218,6 +363,11 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
                     <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100">
                       {totalSelectedFields} {t.activeColumns}
                     </span>
+                    {mergedData.length > 0 && (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[10px] font-bold border border-emerald-100">
+                        {mergedData.length} {t.totalRecords}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -250,45 +400,89 @@ const DataWorkbench: React.FC<DataWorkbenchProps> = ({ onSaveVirtualTable, exist
             </div>
 
             <div className="flex-1 overflow-auto bg-slate-50/20">
-              {mergedData.length > 0 ? (
-                <table className="w-full text-left border-collapse min-w-full">
-                  <thead className="sticky top-0 bg-white border-b border-slate-200 shadow-sm z-20">
-                    <tr>
-                      <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase bg-white border-r border-slate-100 w-12 text-center">#</th>
-                      {allSelectedFieldKeys.map(key => {
-                        const [tbl, fld] = key.split('_');
-                        return (
-                          <th key={key} className="px-6 py-4 bg-white border-r border-slate-100 min-w-[180px]">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] font-black text-indigo-400 uppercase">{tbl}</span>
-                              <span className="text-xs font-bold text-slate-800">{fld}</span>
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {mergedData.map((row, i) => (
-                      <tr key={i} className="hover:bg-indigo-50/20 transition-colors">
-                        <td className="px-4 py-3 text-[10px] font-mono text-slate-300 border-r border-slate-50 text-center">{row._index}</td>
-                        {allSelectedFieldKeys.map(key => (
-                          <td key={key} className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-50 whitespace-nowrap">
-                            {row[key]?.toString() || <span className="text-slate-200 italic">null</span>}
-                          </td>
+              {paginatedData.length > 0 ? (
+                <div className="h-full flex flex-col">
+                  <div className="flex-1 overflow-auto">
+                    <table className="w-full text-left border-collapse min-w-full">
+                      <thead className="sticky top-0 bg-white border-b border-slate-200 shadow-sm z-20">
+                        <tr>
+                          <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase bg-white border-r border-slate-100 w-12 text-center">#</th>
+                          {allSelectedFieldKeys.map(key => {
+                            const [tbl, fld] = key.split('_');
+                            return (
+                              <th key={key} className="px-6 py-4 bg-white border-r border-slate-100 min-w-[180px]">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] font-black text-indigo-400 uppercase">{tbl}</span>
+                                  <span className="text-xs font-bold text-slate-800">{fld}</span>
+                                </div>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {paginatedData.map((row) => (
+                          <tr key={row._index} className="hover:bg-indigo-50/20 transition-colors">
+                            <td className="px-4 py-3 text-[10px] font-mono text-slate-300 border-r border-slate-50 text-center">{row._index}</td>
+                            {allSelectedFieldKeys.map(key => (
+                              <td key={key} className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-50 whitespace-nowrap">
+                                {row[key]?.toString() || <span className="text-slate-200 italic">null</span>}
+                              </td>
+                            ))}
+                          </tr>
                         ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Pagination Controls */}
+                  <div className="bg-white border-t border-slate-200 p-4 flex items-center justify-between z-30 shrink-0">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase">{t.rowsPerPage}</span>
+                        <select 
+                          value={pageSize}
+                          onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                          className="text-xs font-bold border border-slate-200 rounded px-2 py-1 outline-none bg-slate-50 focus:border-indigo-500"
+                        >
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                          <option value={200}>200</option>
+                        </select>
+                      </div>
+                      <span className="text-xs font-medium text-slate-500">
+                        {t.page} {currentPage} {t.of} {totalPages || 1}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <button 
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-slate-600" />
+                      </button>
+                      <button 
+                        disabled={currentPage >= totalPages}
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronRight className="w-4 h-4 text-slate-600" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center p-12 text-center">
                   <div className="bg-indigo-50 p-8 rounded-full mb-6 ring-8 ring-indigo-50/30">
-                    <Zap className="w-12 h-12 text-indigo-500 animate-pulse" />
+                    {totalSelectedFields > 0 ? <Filter className="w-12 h-12 text-indigo-500 animate-pulse" /> : <Zap className="w-12 h-12 text-indigo-500 animate-pulse" />}
                   </div>
-                  <h4 className="text-xl font-bold text-slate-900">{t.workspaceEmpty}</h4>
+                  <h4 className="text-xl font-bold text-slate-900">{totalSelectedFields > 0 ? t.noAssets : t.workspaceEmpty}</h4>
                   <p className="text-sm max-w-sm mx-auto mt-2 text-slate-500 leading-relaxed font-medium">
-                    {t.workspaceEmptyDesc}
+                    {totalSelectedFields > 0 
+                      ? (lang === Language.EN ? "Adjust your filters or field selections. Current criteria returned no matching rows." : "调整您的筛选条件或字段选择。当前标准未返回任何匹配的行。")
+                      : t.workspaceEmptyDesc}
                   </p>
                 </div>
               )}

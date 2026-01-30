@@ -1,5 +1,6 @@
-import React from 'react';
-import { Table as TableIcon, Download, Calendar, ArrowLeft, Database } from 'lucide-react';
+
+import React, { useState, useMemo } from 'react';
+import { Table as TableIcon, Calendar, ArrowLeft, Database, ChevronLeft, ChevronRight } from 'lucide-react';
 import { VirtualTable, Language } from '../types';
 import { translations } from '../translations';
 
@@ -13,15 +14,25 @@ interface AssetPreviewProps {
 const AssetPreview: React.FC<AssetPreviewProps> = ({ table, onBack, onExport, lang }) => {
   const t = translations[lang];
   
+  // Pagination State - Default to 50 as requested
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
   // Format date based on current language
   const formattedDate = new Date(table.createdAt).toLocaleDateString(
     lang === Language.ZH ? 'zh-CN' : 'en-US',
     { year: 'numeric', month: 'long', day: 'numeric' }
   );
 
+  const totalPages = Math.ceil(table.data.length / pageSize);
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return table.data.slice(start, start + pageSize);
+  }, [table.data, currentPage, pageSize]);
+
   return (
     <div className="h-full flex flex-col bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+      <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
         <div className="flex items-center gap-6">
           <button onClick={onBack} className="p-3 bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 rounded-2xl shadow-sm group"><ArrowLeft className="w-5 h-5 group-hover:-translate-x-1" /></button>
           <div className="flex items-center gap-4">
@@ -38,32 +49,81 @@ const AssetPreview: React.FC<AssetPreviewProps> = ({ table, onBack, onExport, la
         </div>
         <button onClick={() => onExport(table)} className="flex items-center gap-2.5 px-6 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-2xl font-black text-xs uppercase tracking-widest">{t.export}</button>
       </div>
-      <div className="flex-1 overflow-auto bg-white">
-        <table className="w-full text-left border-collapse min-w-full">
-          <thead className="sticky top-0 bg-white border-b border-slate-200 shadow-sm z-20">
-            <tr>
-              <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase bg-white border-r border-slate-50 w-16 text-center">#</th>
-              {table.fields.map(key => (
-                <th key={key} className="px-6 py-5 bg-white border-r border-slate-50 min-w-[200px]">
-                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block mb-1">{key.split('_')[0]}</span>
-                  <div className="text-sm font-bold text-slate-800">{key.split('_').slice(1).join('_') || key}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {table.data.map((row, i) => (
-              <tr key={i} className="hover:bg-slate-50 transition-colors group">
-                <td className="px-6 py-4 text-[11px] font-mono text-slate-300 border-r border-slate-50 text-center bg-slate-50/30 group-hover:text-indigo-400 group-hover:bg-white">{i + 1}</td>
+
+      <div className="flex-1 overflow-auto bg-white flex flex-col">
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-left border-collapse min-w-full">
+            <thead className="sticky top-0 bg-white border-b border-slate-200 shadow-sm z-20">
+              <tr>
+                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase bg-white border-r border-slate-50 w-16 text-center">#</th>
                 {table.fields.map(key => (
-                  <td key={key} className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-50 whitespace-nowrap">{row[key]?.toString() || <span className="text-slate-200 italic">null</span>}</td>
+                  <th key={key} className="px-6 py-5 bg-white border-r border-slate-50 min-w-[200px]">
+                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block mb-1">{key.split('_')[0]}</span>
+                    <div className="text-sm font-bold text-slate-800">{key.split('_').slice(1).join('_') || key}</div>
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paginatedData.map((row, i) => (
+                <tr key={i} className="hover:bg-slate-50 transition-colors group">
+                  <td className="px-6 py-4 text-[11px] font-mono text-slate-300 border-r border-slate-50 text-center bg-slate-50/30 group-hover:text-indigo-400 group-hover:bg-white">
+                    {(currentPage - 1) * pageSize + i + 1}
+                  </td>
+                  {table.fields.map(key => (
+                    <td key={key} className="px-6 py-4 text-xs font-medium text-slate-600 border-r border-slate-50 whitespace-nowrap">
+                      {row[key]?.toString() || <span className="text-slate-200 italic">null</span>}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Bar */}
+        <div className="bg-slate-50 border-t border-slate-100 p-6 flex items-center justify-between z-30 shrink-0">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{t.rowsPerPage}</span>
+              <select 
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                className="text-xs font-bold border border-slate-200 rounded-lg px-3 py-1.5 outline-none bg-white focus:border-indigo-500 transition-colors"
+              >
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
+            <div className="h-6 w-px bg-slate-200" />
+            <span className="text-xs font-bold text-slate-500 uppercase">
+              {t.page} {currentPage} {t.of} {totalPages || 1}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <button 
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-white hover:border-indigo-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-slate-200 transition-all font-bold text-xs text-slate-600"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              {t.previous}
+            </button>
+            <button 
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-white hover:border-indigo-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:border-slate-200 transition-all font-bold text-xs text-slate-600"
+            >
+              {t.next}
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="px-8 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+
+      <div className="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.totalRecords}: {table.data.length}</span>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded uppercase">{t.assetId}: {table.id}</span>

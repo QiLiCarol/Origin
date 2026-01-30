@@ -1,3 +1,4 @@
+
 export const translations = {
   en: {
     nav: "Navigation",
@@ -82,7 +83,17 @@ export const translations = {
     analyzingData: "Analyzing data...",
     atLeastOneCanvas: "At least one canvas must exist.",
     userName: "Senior BI Admin",
-    assetId: "Asset ID"
+    assetId: "Asset ID",
+    temporalFilters: "Temporal Filters",
+    startDate: "Start Date",
+    endDate: "End Date",
+    filterActive: "Filter Active",
+    allTime: "All Time",
+    next: "Next",
+    previous: "Previous",
+    page: "Page",
+    of: "of",
+    rowsPerPage: "Rows per page"
   },
   zh: {
     nav: "导航",
@@ -167,6 +178,16 @@ export const translations = {
     analyzingData: "正在分析数据...",
     atLeastOneCanvas: "必须保留至少一个看板。",
     userName: "管理员",
-    assetId: "资产 ID"
+    assetId: "资产 ID",
+    temporalFilters: "时间筛选",
+    startDate: "开始日期",
+    endDate: "结束日期",
+    filterActive: "筛选已启用",
+    allTime: "全部时间",
+    next: "下一页",
+    previous: "上一页",
+    page: "第",
+    of: "页，共",
+    rowsPerPage: "每页行数"
   }
 };
