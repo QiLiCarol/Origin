@@ -4,24 +4,101 @@ import {
   Layout, Database as DBIcon, LayoutDashboard, ChevronRight, 
   PlusCircle, Download, Pencil, Trash2, Check, X, Plus, 
   Files, MoreVertical, LayoutPanelLeft, Eye, Table as TableIcon, FileText, Upload,
-  HelpCircle, MessageSquare, ExternalLink, Send, Globe, User
+  HelpCircle, MessageSquare, ExternalLink, Send, Globe, User, Lock
 } from 'lucide-react';
-import { Module, DatabaseTable, VirtualTable, Dashboard, Language } from './types';
+import { Module, DatabaseTable, VirtualTable, Dashboard, Language, ChartType } from './types';
 import { translations } from './translations';
+import { MOCK_TABLES } from './constants';
 import DataWorkbench from './components/DataWorkbench';
 import ChartWorkbench from './components/ChartWorkbench';
 import AssetPreview from './components/AssetPreview';
+
+const OVERVIEW_ID = 'overview_system';
+const SYSTEM_VT_ID = 'vt_system_global';
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<Language>(Language.EN);
   const t = translations[lang];
 
-  const [activeModule, setActiveModule] = useState<Module>(Module.CHART_WORKBENCH);
-  const [virtualTables, setVirtualTables] = useState<VirtualTable[]>([]);
+  /**
+   * Initialize a System Virtual Table for the Overview dashboard
+   */
+  const initialSystemVT: VirtualTable = {
+    id: SYSTEM_VT_ID,
+    name: "System_Global_Metrics",
+    sourceTableIds: ['t1', 't2'],
+    fields: [
+      'Sales_Orders_amount', 
+      'Sales_Orders_region', 
+      'Sales_Orders_category', 
+      'Marketing_Campaigns_spend', 
+      'Marketing_Campaigns_conversions',
+      'Marketing_Campaigns_date'
+    ],
+    // Simplistic mock join/data for the system overview
+    data: MOCK_TABLES[0].data.map((row, i) => ({
+      Sales_Orders_amount: row.amount,
+      Sales_Orders_region: row.region,
+      Sales_Orders_category: row.category,
+      Marketing_Campaigns_spend: MOCK_TABLES[1].data[i % MOCK_TABLES[1].data.length].spend,
+      Marketing_Campaigns_conversions: MOCK_TABLES[1].data[i % MOCK_TABLES[1].data.length].conversions,
+      Marketing_Campaigns_date: MOCK_TABLES[1].data[i % MOCK_TABLES[1].data.length].date,
+    })),
+    createdAt: new Date().toISOString()
+  };
+
+  const [virtualTables, setVirtualTables] = useState<VirtualTable[]>([initialSystemVT]);
+  
+  // Initialize with the standard Overview dashboard
   const [dashboards, setDashboards] = useState<Dashboard[]>([
-    { id: 'd1', name: lang === Language.EN ? 'Overview' : '总览', widgets: [] }
+    { 
+      id: OVERVIEW_ID, 
+      name: lang === Language.EN ? 'Overview' : '总览', 
+      widgets: [
+        {
+          id: 'w_sys_1',
+          title: lang === Language.EN ? 'Total Sales Amount' : '总销售额',
+          type: ChartType.KPI,
+          dataSourceId: SYSTEM_VT_ID,
+          config: { yAxis: 'Sales_Orders_amount', color: '#6366f1' },
+          layout: { w: 3, h: 2, x: 0, y: 0 }
+        },
+        {
+          id: 'w_sys_2',
+          title: lang === Language.EN ? 'Marketing Spend' : '营销支出',
+          type: ChartType.KPI,
+          dataSourceId: SYSTEM_VT_ID,
+          config: { yAxis: 'Marketing_Campaigns_spend', color: '#10b981' },
+          layout: { w: 3, h: 2, x: 3, y: 0 }
+        },
+        {
+          id: 'w_sys_3',
+          title: lang === Language.EN ? 'Sales by Region' : '区域销售分布',
+          type: ChartType.BAR,
+          dataSourceId: SYSTEM_VT_ID,
+          config: { xAxis: 'Sales_Orders_region', yAxis: 'Sales_Orders_amount', color: '#6366f1' },
+          layout: { w: 6, h: 4, x: 0, y: 2 }
+        },
+        {
+          id: 'w_sys_4',
+          title: lang === Language.EN ? 'Category Breakdown' : '类别分析',
+          type: ChartType.PIE,
+          dataSourceId: SYSTEM_VT_ID,
+          config: { xAxis: 'Sales_Orders_category', yAxis: 'Sales_Orders_amount', color: '#8b5cf6' },
+          layout: { w: 6, h: 6, x: 6, y: 0 }
+        },
+        {
+          id: 'w_sys_5',
+          title: lang === Language.EN ? 'Marketing ROI Over Time' : '营销投资回报趋势',
+          type: ChartType.LINE,
+          dataSourceId: SYSTEM_VT_ID,
+          config: { xAxis: 'Marketing_Campaigns_date', yAxis: 'Marketing_Campaigns_spend', color: '#10b981' },
+          layout: { w: 12, h: 4, x: 0, y: 6 }
+        }
+      ] 
+    }
   ]);
-  const [activeDashboardId, setActiveDashboardId] = useState<string>('d1');
+  const [activeDashboardId, setActiveDashboardId] = useState<string>(OVERVIEW_ID);
 
   // Renaming state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -39,6 +116,8 @@ const App: React.FC = () => {
   // Active Preview State
   const [activePreviewTable, setActivePreviewTable] = useState<VirtualTable | null>(null);
 
+  const activeModule = (activePreviewTable ? Module.ASSET_PREVIEW : (activeDashboardId ? Module.CHART_WORKBENCH : Module.DATA_WORKBENCH));
+
   useEffect(() => {
     if (editingId && editInputRef.current) {
       editInputRef.current.focus();
@@ -55,11 +134,11 @@ const App: React.FC = () => {
   };
 
   const deleteVirtualTable = (id: string) => {
+    if (id === SYSTEM_VT_ID) return; // Prevent deleting system VT
     setVirtualTables(prev => prev.filter(vt => vt.id !== id));
     if (editingId === id) setEditingId(null);
     if (activePreviewTable?.id === id) {
       setActivePreviewTable(null);
-      setActiveModule(Module.DATA_WORKBENCH);
     }
   };
 
@@ -75,11 +154,9 @@ const App: React.FC = () => {
 
       let text = '';
       try {
-        // First try to decode as UTF-8. {fatal: true} will cause it to throw if invalid sequences are found
         const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
         text = utf8Decoder.decode(buffer);
       } catch (err) {
-        // If UTF-8 fails, it's likely a legacy encoding like GBK (common in Chinese Excel CSV exports)
         console.warn("UTF-8 decoding failed, falling back to GBK for Chinese character support.");
         const gbkDecoder = new TextDecoder('gbk');
         text = gbkDecoder.decode(buffer);
@@ -115,7 +192,6 @@ const App: React.FC = () => {
         const obj: any = {};
         headers.forEach((header, index) => {
           const val = values[index];
-          // Try to convert to number if possible, otherwise keep as string
           obj[header] = isNaN(Number(val)) || val === '' ? val : Number(val);
         });
         return obj;
@@ -133,8 +209,6 @@ const App: React.FC = () => {
       setVirtualTables(prev => [...prev, newVt]);
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
-    
-    // Read as ArrayBuffer to allow multiple decoding attempts
     reader.readAsArrayBuffer(file);
   };
 
@@ -143,17 +217,18 @@ const App: React.FC = () => {
     const newId = `d_${Date.now()}`;
     const newDash: Dashboard = {
       id: newId,
-      name: `${lang === Language.EN ? 'New Canvas' : '新看板'} ${dashboards.length + 1}`,
+      name: `${lang === Language.EN ? 'New Canvas' : '新看板'} ${dashboards.length}`,
       widgets: []
     };
     setDashboards(prev => [...prev, newDash]);
     setActiveDashboardId(newId);
-    setActiveModule(Module.CHART_WORKBENCH);
+    setActivePreviewTable(null);
     setEditingId(newId);
     setEditingName(newDash.name);
   };
 
   const deleteDashboard = (id: string) => {
+    if (id === OVERVIEW_ID) return; // Prevent deleting standard Overview
     if (dashboards.length <= 1) {
       alert(t.atLeastOneCanvas);
       return;
@@ -167,6 +242,7 @@ const App: React.FC = () => {
   };
 
   const startRenaming = (id: string, name: string) => {
+    if (id === OVERVIEW_ID) return; // Prevent renaming standard Overview
     setEditingId(id);
     setEditingName(name);
   };
@@ -186,6 +262,7 @@ const App: React.FC = () => {
   };
 
   const updateDashboard = (updated: Dashboard) => {
+    if (updated.id === OVERVIEW_ID) return; // Protect Overview
     setDashboards(prev => prev.map(d => d.id === updated.id ? updated : d));
   };
 
@@ -213,7 +290,6 @@ const App: React.FC = () => {
 
   const handlePreviewAsset = (vt: VirtualTable) => {
     setActivePreviewTable(vt);
-    setActiveModule(Module.ASSET_PREVIEW);
   };
 
   const handleSendFeedback = () => {
@@ -225,7 +301,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
-      {/* Hidden Upload Input */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -237,7 +312,7 @@ const App: React.FC = () => {
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col flex-shrink-0">
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-lg">
+          <div className="bg-indigo-600 p-2 rounded-lg shadow-lg shadow-indigo-500/20">
             <Layout className="w-5 h-5" />
           </div>
           <h1 className="font-bold text-xl tracking-tight">InsightPro</h1>
@@ -248,15 +323,15 @@ const App: React.FC = () => {
           <div className="space-y-1">
             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-2">{t.nav}</div>
             <button 
-              onClick={() => { setActiveModule(Module.DATA_WORKBENCH); setActivePreviewTable(null); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${activeModule === Module.DATA_WORKBENCH ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800'}`}
+              onClick={() => { setActiveDashboardId(''); setActivePreviewTable(null); }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${!activeDashboardId && !activePreviewTable ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800'}`}
             >
               <DBIcon className="w-4 h-4" />
               <span className="font-semibold text-sm">{t.dataWorkbench}</span>
             </button>
             <button 
-              onClick={() => { setActiveModule(Module.CHART_WORKBENCH); setActivePreviewTable(null); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${activeModule === Module.CHART_WORKBENCH ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800'}`}
+              onClick={() => { if (!activeDashboardId) setActiveDashboardId(OVERVIEW_ID); setActivePreviewTable(null); }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${activeDashboardId && !activePreviewTable ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800'}`}
             >
               <LayoutPanelLeft className="w-4 h-4" />
               <span className="font-semibold text-sm">{t.chartWorkbench}</span>
@@ -271,40 +346,47 @@ const App: React.FC = () => {
                 <Plus className="w-3 h-3" />
               </button>
             </div>
-            {dashboards.map(dash => (
-              <div 
-                key={dash.id} 
-                onClick={() => { setActiveDashboardId(dash.id); setActiveModule(Module.CHART_WORKBENCH); setActivePreviewTable(null); }}
-                className={`group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${activeDashboardId === dash.id && activeModule === Module.CHART_WORKBENCH ? 'bg-slate-800 text-white border-l-2 border-indigo-500' : 'text-slate-400 hover:bg-slate-800/50'}`}
-              >
-                {editingId === dash.id ? (
-                  <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
-                    <input
-                      ref={editInputRef}
-                      type="text"
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditingId(null); }}
-                      className="bg-slate-700 text-[11px] text-white px-2 py-1 rounded outline-none border border-indigo-500 flex-1 min-w-0"
-                    />
-                    <button onClick={saveRename} className="p-0.5 text-emerald-400 hover:text-emerald-300"><Check className="w-3 h-3" /></button>
-                  </div>
-                ) : (
-                  <>
-                    <LayoutDashboard className={`w-3.5 h-3.5 ${activeDashboardId === dash.id ? 'text-indigo-400' : 'text-slate-600'}`} />
-                    <div className="text-xs font-medium truncate flex-1">{dash.name}</div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={(e) => { e.stopPropagation(); startRenaming(dash.id, dash.name); }} className="p-1 text-slate-500 hover:text-indigo-400 rounded">
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteDashboard(dash.id); }} className="p-1 text-slate-500 hover:text-red-400 rounded">
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+            {dashboards.map(dash => {
+              const isLocked = dash.id === OVERVIEW_ID;
+              const isActive = activeDashboardId === dash.id && !activePreviewTable;
+              return (
+                <div 
+                  key={dash.id} 
+                  onClick={() => { setActiveDashboardId(dash.id); setActivePreviewTable(null); }}
+                  className={`group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${isActive ? 'bg-slate-800 text-white border-l-2 border-indigo-500' : 'text-slate-400 hover:bg-slate-800/50'}`}
+                >
+                  {editingId === dash.id ? (
+                    <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
+                      <input
+                        ref={editInputRef}
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditingId(null); }}
+                        className="bg-slate-700 text-[11px] text-white px-2 py-1 rounded outline-none border border-indigo-500 flex-1 min-w-0"
+                      />
+                      <button onClick={saveRename} className="p-0.5 text-emerald-400 hover:text-emerald-300"><Check className="w-3 h-3" /></button>
                     </div>
-                  </>
-                )}
-              </div>
-            ))}
+                  ) : (
+                    <>
+                      {isLocked ? <Lock className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-400' : 'text-slate-600'}`} /> : <LayoutDashboard className={`w-3.5 h-3.5 ${isActive ? 'text-indigo-400' : 'text-slate-600'}`} />}
+                      <div className="text-xs font-medium truncate flex-1">{dash.name}</div>
+                      {!isLocked && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => { e.stopPropagation(); startRenaming(dash.id, dash.name); }} className="p-1 text-slate-500 hover:text-indigo-400 rounded">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteDashboard(dash.id); }} className="p-1 text-slate-500 hover:text-red-400 rounded">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      {isLocked && <span className="text-[8px] font-bold text-slate-600 bg-slate-700/50 px-1 rounded-sm uppercase tracking-tighter">{t.readOnly}</span>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Saved Assets Section */}
@@ -320,7 +402,7 @@ const App: React.FC = () => {
               </button>
             </div>
             {virtualTables.map(vt => {
-              const isBeingPreviewed = activeModule === Module.ASSET_PREVIEW && activePreviewTable?.id === vt.id;
+              const isBeingPreviewed = activePreviewTable?.id === vt.id;
               return (
                 <div 
                   key={vt.id} 
@@ -347,24 +429,22 @@ const App: React.FC = () => {
                         <button onClick={(e) => { e.stopPropagation(); handlePreviewAsset(vt); }} className="p-1 text-slate-500 hover:text-emerald-400 rounded" title="Preview">
                           <Eye className="w-3 h-3" />
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); startRenaming(vt.id, vt.name); }} className="p-1 text-slate-500 hover:text-indigo-400 rounded" title="Rename">
-                          <Pencil className="w-3 h-3" />
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); deleteVirtualTable(vt.id); }} className="p-1 text-slate-500 hover:text-red-400 rounded" title="Delete">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        {vt.id !== SYSTEM_VT_ID && (
+                          <>
+                            <button onClick={(e) => { e.stopPropagation(); startRenaming(vt.id, vt.name); }} className="p-1 text-slate-500 hover:text-indigo-400 rounded" title="Rename">
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteVirtualTable(vt.id); }} className="p-1 text-slate-500 hover:text-red-400 rounded" title="Delete">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </>
                   )}
                 </div>
               );
             })}
-            {virtualTables.length === 0 && (
-              <div className="px-3 py-4 text-[10px] italic text-slate-600 text-center uppercase font-bold tracking-tighter leading-tight bg-slate-800/20 rounded-lg mx-2">
-                {t.noAssets}<br/>
-                <span className="text-slate-700 mt-1 block">{t.saveFromWorkbench}</span>
-              </div>
-            )}
           </div>
         </nav>
 
@@ -387,10 +467,15 @@ const App: React.FC = () => {
              <span className="text-xs font-black uppercase tracking-widest">{t.workspace}</span>
              <ChevronRight className="w-3 h-3" />
              <span className="text-sm font-bold text-slate-900">
-               {activeModule === Module.DATA_WORKBENCH ? t.dataNexus : 
-                activeModule === Module.ASSET_PREVIEW ? `${t.review}: ${activePreviewTable?.name}` :
-                dashboards.find(d => d.id === activeDashboardId)?.name || t.dashboardBuilder}
+               {activePreviewTable ? `${t.review}: ${activePreviewTable.name}` :
+                (activeDashboardId ? dashboards.find(d => d.id === activeDashboardId)?.name : t.dataNexus)}
              </span>
+             {activeDashboardId === OVERVIEW_ID && !activePreviewTable && (
+               <span className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-black uppercase tracking-widest border border-slate-200">
+                 <Lock className="w-3 h-3" />
+                 {t.standardDashboard}
+               </span>
+             )}
           </div>
           <div className="flex items-center gap-4">
              <button onClick={toggleLanguage} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600 font-bold text-xs border border-slate-100" title="Switch Language">
@@ -417,15 +502,22 @@ const App: React.FC = () => {
                <DataWorkbench onSaveVirtualTable={addVirtualTable} existingVirtualTables={virtualTables} lang={lang} />
              </div>
            )}
-           {activeModule === Module.CHART_WORKBENCH && (
+           {activeModule === Module.CHART_WORKBENCH && activeDashboardId && (
              <div className="h-full overflow-y-auto scrollbar-thin">
-               <ChartWorkbench virtualTables={virtualTables} dashboards={dashboards} activeDashboardId={activeDashboardId} onUpdateDashboard={updateDashboard} lang={lang} />
+               <ChartWorkbench 
+                 virtualTables={virtualTables} 
+                 dashboards={dashboards} 
+                 activeDashboardId={activeDashboardId} 
+                 onUpdateDashboard={updateDashboard} 
+                 lang={lang} 
+                 isSystemOverview={activeDashboardId === OVERVIEW_ID}
+               />
              </div>
            )}
            {activeModule === Module.ASSET_PREVIEW && activePreviewTable && (
              <AssetPreview 
                table={activePreviewTable} 
-               onBack={() => { setActiveModule(Module.CHART_WORKBENCH); setActivePreviewTable(null); }}
+               onBack={() => { setActivePreviewTable(null); }}
                onExport={handleExportTable}
                lang={lang}
              />

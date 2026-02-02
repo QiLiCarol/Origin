@@ -93,7 +93,10 @@ export const translations = {
     previous: "Previous",
     page: "Page",
     of: "of",
-    rowsPerPage: "Rows per page"
+    rowsPerPage: "Rows per page",
+    standardDashboard: "Standard View",
+    readOnly: "Read Only",
+    lockedTooltip: "Standard overview cannot be modified."
   },
   zh: {
     nav: "导航",
@@ -188,6 +191,9 @@ export const translations = {
     previous: "上一页",
     page: "第",
     of: "页，共",
-    rowsPerPage: "每页行数"
+    rowsPerPage: "每页行数",
+    standardDashboard: "标准视图",
+    readOnly: "只读",
+    lockedTooltip: "标准总览页面不可修改。"
   }
 };
